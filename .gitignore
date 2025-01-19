@@ -1,5 +1,4 @@
 .vscode/
-*.c
 *.output
-*.h
 javaco
+build/
