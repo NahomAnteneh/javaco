@@ -27,6 +27,8 @@
 "static"             { printf("Token: STATIC\n"); return STATIC; }
 "protected"          { return PROTECTED; }
 "new"                { return NEW; }
+"true"               { return TRUE; }
+"false"               { return FALSE; }
 
 [0-9]+               { yylval = atoi(yytext); printf("Token: NUMBER\n"); return NUMBER; } // Integers
 [0-9]+"."[0-9]+      { yylval = atof(yytext); return FLOAT_LITERAL; } // Floating-point numbers
