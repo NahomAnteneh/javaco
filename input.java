@@ -1,9 +1,11 @@
 public class Main {
+    public static int abc;
     public static void main(String[] args) {
-        System.out.println("Hello, World!");
-        System.out.println(add(1, 2));
+        int sum = add(1, 2);
     }
     public static int add(int a, int b) {
+        int c = 0;
+        int sum = a + b;
         return a + b;
     }
 }
