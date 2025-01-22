@@ -12,34 +12,8 @@ extern char *yytext;
 
 int yylex(void);
 
-#define MAX_ERRORS 100
-
-typedef struct {
-    int line;
-    char message[256];
-} Error;
-
-Error error_list[MAX_ERRORS];
-int error_count = 0;
-
-void add_error(int line, const char *msg) {
-    if (error_count < MAX_ERRORS) {
-        error_list[error_count].line = line;
-        snprintf(error_list[error_count].message, sizeof(error_list[error_count].message), "%s", msg);
-        error_count++;
-    }
-}
-
-void print_errors() {
-    for (int i = 0; i < error_count; i++) {
-        fprintf(stderr, "Error at line %d: %s\n", error_list[i].line, error_list[i].message);
-    }
-}
-
 void yyerror(const char *msg) {
-    char error_message[256];
-    snprintf(error_message, sizeof(error_message), "%s at '%s'", msg, yytext);
-    add_error(yylineno, error_message);
+    fprintf(stderr, "Error at line %d: %s at '%s'\n", yylineno, msg, yytext);
 }
 
 SymbolTable *current_symbol_table = NULL;
@@ -155,16 +129,6 @@ class_declaration:
     }
     ;
 
-class_body:
-    class_body member_declaration
-    | member_declaration
-    ;
-
-member_declaration:
-    variable_declaration
-    | method_declaration
-    ;
-
 access_modifier:
     PUBLIC
     | PRIVATE
@@ -172,11 +136,21 @@ access_modifier:
     | /* empty */
     ;
 
-variable_declaration:
+class_body:
+    class_body member_declaration
+    | member_declaration
+    ;
+
+member_declaration:
+    class_variable_declaration
+    | method_declaration
+    ;
+
+class_variable_declaration:
     access_modifier static_modifier type IDENTIFIER SEMICOLON
     {
         if (symbol_exists($4)) {
-            yyerror("Variable redeclared");
+            fprintf(stderr, "Error at line %d: Variable '%s' redeclared\n", yylineno, $4);
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -185,49 +159,11 @@ variable_declaration:
     | access_modifier static_modifier type IDENTIFIER ASSIGN expression SEMICOLON
     {
         if (symbol_exists($4)) {
-            yyerror("Variable redeclared");
+            fprintf(stderr, "Error at line %d: Variable '%s' redeclared\n", yylineno, $4);
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
         free($4); free($3);
-    }
-    | type IDENTIFIER SEMICOLON
-    {
-        if (symbol_exists($2)) {
-            yyerror("Variable redeclared");
-        } else {
-            insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
-        }
-        free($2); free($1);
-    }
-    | type IDENTIFIER ASSIGN expression SEMICOLON
-    {
-        if (symbol_exists($2)) {
-            yyerror("Variable redeclared");
-        } else {
-            insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
-        }
-        free($2); free($1);
-    }
-    ;
-
-static_modifier:
-    STATIC
-    | /* empty */
-    ;
-
-type:
-    INT { $$ = strdup("int"); }
-    | FLOAT { $$ = strdup("float"); }
-    | DOUBLE { $$ = strdup("double"); }
-    | BOOLEAN { $$ = strdup("boolean"); }
-    | CHAR { $$ = strdup("char"); }
-    | STRING { $$ = strdup("String"); }
-    | VOID { $$ = strdup("void"); }
-    | type LBRACKET RBRACKET { 
-        $$ = malloc(strlen($1) + 3);
-        sprintf($$, "%s[]", $1);
-        free($1);
     }
     ;
 
@@ -252,7 +188,7 @@ parameter:
     type IDENTIFIER
     {
         if (symbol_exists($2)) {
-            yyerror("Parameter redeclared");
+            fprintf(stderr, "Error at line %d: Parameter '%s' redeclared\n", yylineno, $2);
         } else {
             insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_PARAMETER, current_symbol_table);
         }
@@ -270,7 +206,7 @@ block_statements:
     ;
 
 statement:
-    variable_declaration
+    method_variable_declaration
     | assignment_statement
     | array_declaration
     | switch_statement
@@ -283,24 +219,27 @@ statement:
     | continue_statement
     | try_statement
     | method_call_statement
-    | increment_statement
     | block
     ;
 
-increment_statement:
-    IDENTIFIER INCREMENT SEMICOLON
+method_variable_declaration:
+    type IDENTIFIER SEMICOLON
     {
-        if (!symbol_exists($1)) {
-            yyerror("Undeclared variable");
+        if (symbol_exists($2)) {
+            fprintf(stderr, "Error at line %d: Variable '%s' redeclared\n", yylineno, $2);
+        } else {
+            insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
-        free($1);
+        free($2); free($1);
     }
-    | IDENTIFIER DECREMENT SEMICOLON
+    | type IDENTIFIER ASSIGN expression SEMICOLON
     {
-        if (!symbol_exists($1)) {
-            yyerror("Undeclared variable");
+        if (symbol_exists($2)) {
+            fprintf(stderr, "Error at line %d: Variable '%s' redeclared\n", yylineno, $2);
+        } else {
+            insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
-        free($1);
+        free($2); free($1);
     }
     ;
 
@@ -308,7 +247,7 @@ assignment_statement:
     IDENTIFIER ASSIGN expression SEMICOLON
     {
         if (!symbol_exists($1)) {
-            yyerror("Undeclared variable");
+            fprintf(stderr, "Error at line %d: Undeclared variable '%s'\n", yylineno, $1);
         }
         free($1);
     }
@@ -323,7 +262,7 @@ method_invocation:
     {
         SymbolEntry *method = lookup_symbol(current_symbol_table, $1);
         if (!method || method->category != SYMBOL_CATEGORY_METHOD) {
-            yyerror("Undefined method");
+            fprintf(stderr, "Error at line %d: Undefined method '%s'\n", yylineno, $1);
         }
         free($1);
         $$ = NULL;
@@ -349,12 +288,8 @@ argument_list:
     ;
 
 if_statement:
-    IF LPAREN expression RPAREN statement
-    | IF LPAREN expression RPAREN LBRACE block_statements RBRACE
+    IF LPAREN expression RPAREN statement %prec THEN
     | IF LPAREN expression RPAREN statement ELSE statement
-    | IF LPAREN expression RPAREN LBRACE block_statements RBRACE ELSE statement
-    | IF LPAREN expression RPAREN statement ELSE LBRACE block_statements RBRACE
-    | IF LPAREN expression RPAREN LBRACE block_statements RBRACE ELSE LBRACE block_statements RBRACE
     ;
 
 while_statement:
@@ -389,7 +324,7 @@ local_variable_declaration:
     type IDENTIFIER ASSIGN expression
     {
         if (symbol_exists($2)) {
-            yyerror("Variable redeclared");
+            fprintf(stderr, "Error at line %d: Variable '%s' redeclared\n", yylineno, $2);
         } else {
             insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -398,7 +333,7 @@ local_variable_declaration:
     | type IDENTIFIER
     {
         if (symbol_exists($2)) {
-            yyerror("Variable redeclared");
+            fprintf(stderr, "Error at line %d: Variable '%s' redeclared\n", yylineno, $2);
         } else {
             insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -410,7 +345,7 @@ assignment_expression:
     IDENTIFIER ASSIGN expression
     {
         if (!symbol_exists($1)) {
-            yyerror("Undeclared variable");
+            fprintf(stderr, "Error at line %d: Undeclared variable '%s'\n", yylineno, $1);
         }
         free($1);
     }
@@ -443,7 +378,7 @@ array_declaration:
     type LBRACKET RBRACKET IDENTIFIER SEMICOLON
     {
         if (symbol_exists($4)) {
-            yyerror("Array redeclared");
+            fprintf(stderr, "Error at line %d: Array '%s' redeclared\n", yylineno, $4);
         } else {
             insert_symbol(current_symbol_table, $4, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -452,7 +387,7 @@ array_declaration:
     | type LBRACKET RBRACKET IDENTIFIER ASSIGN array_initializer SEMICOLON
     {
         if (symbol_exists($4)) {
-            yyerror("Array redeclared");
+            fprintf(stderr, "Error at line %d: Array '%s' redeclared\n", yylineno, $4);
         } else {
             insert_symbol(current_symbol_table, $4, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -477,7 +412,7 @@ enhanced_for_statement:
     statement
     {
         if (symbol_exists($4)) {
-            yyerror("Variable redeclared");
+            fprintf(stderr, "Error at line %d: Variable '%s' redeclared\n", yylineno, $4);
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -526,7 +461,7 @@ catch_clause:
     block
     {
         if (symbol_exists($4)) {
-            yyerror("Exception variable redeclared");
+            fprintf(stderr, "Error at line %d: Exception variable '%s' redeclared\n", yylineno, $4);
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -544,9 +479,9 @@ array_access:
     {
         SymbolEntry *entry = lookup_symbol(current_symbol_table, $1);
         if (!entry) {
-            yyerror("Undeclared variable");
+            fprintf(stderr, "Error at line %d: Undeclared variable '%s'\n", yylineno, $1);
         } else if (entry->category != SYMBOL_CATEGORY_VARIABLE) {
-            yyerror("Not an array variable");
+            fprintf(stderr, "Error at line %d: '%s' is not an array variable\n", yylineno, $1);
         }
         free($1);
     }
@@ -569,9 +504,9 @@ primary:
     {
         SymbolEntry *entry = lookup_symbol(current_symbol_table, $1);
         if (!entry) {
-            yyerror("Undeclared variable");
+            fprintf(stderr, "Error at line %d: Undeclared variable '%s'\n", yylineno, $1);
         } else if (entry->category == SYMBOL_CATEGORY_METHOD) {
-            yyerror("Method called without parentheses");
+            fprintf(stderr, "Error at line %d: Method '%s' called without parentheses\n", yylineno, $1);
         }
         free($1);
     }
@@ -649,8 +584,6 @@ int main(int argc, char *argv[]) {
         printf("Parsing Failed\n");
     }
 
-    print_errors();
-    
     destroy_scope(current_symbol_table);
     fclose(input_file);
     return 0;
