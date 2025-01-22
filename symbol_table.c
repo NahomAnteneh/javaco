@@ -11,13 +11,13 @@ SymbolTable *create_scope(char *name, SymbolTable *parent)
     return new_table;
 }
 
-void insert_symbol(SymbolTable *table, char *name, char *type, char *category, char *scope)
+void insert_symbol(SymbolTable *table, char *name, char *type, SymbolCategory category, SymbolScope scope)
 {
     SymbolEntry *entry = (SymbolEntry *)malloc(sizeof(SymbolEntry));
     entry->name = strdup(name);
     entry->type = strdup(type);
-    entry->category = strdup(category);
-    entry->scope = strdup(scope);
+    entry->category = category;
+    entry->scope = scope;
     entry->next = table->entries;
     table->entries = entry;
 }
@@ -45,8 +45,6 @@ void destroy_scope(SymbolTable *table)
         entry = entry->next;
         free(temp->name);
         free(temp->type);
-        free(temp->category);
-        free(temp->scope);
         free(temp);
     }
     free(table);

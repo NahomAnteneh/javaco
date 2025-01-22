@@ -1,76 +1,132 @@
 %{
 #include "y.tab.h"
-#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int yycolumn = 1;
+
 %}
+
+%option noyywrap
+%option yylineno
 
 %%
 
-"int"                { printf("Token: INT\n"); return INT; }
-"float"              { return FLOAT; }
-"double"             { return DOUBLE; }
-"boolean"            { return BOOLEAN; }
-"char"               { return CHAR; }
-"String"             { return STRING; }
-"void"               { return VOID; }
-"if"                 { return IF; }
-"else"               { return ELSE; }
-"while"              { return WHILE; }
-"for"                { return FOR; }
-"break"              { return BREAK; }
-"continue"           { return CONTINUE; }
-"return"             { return RETURN; }
-"try"                { return TRY; }
-"catch"              { return CATCH; }
-"class"              { printf("Token: CLASS\n"); return CLASS; }
-"public"             { printf("Token: PUBLIC\n"); return PUBLIC; }
-"private"            { return PRIVATE; }
-"static"             { printf("Token: STATIC\n"); return STATIC; }
-"protected"          { return PROTECTED; }
-"new"                { return NEW; }
-"true"               { return TRUE; }
-"false"               { return FALSE; }
+\n                  { yylineno++; yycolumn = 1; }
+[ \t]+              { yycolumn += yyleng; }
+\r                  { yycolumn = 1; }
 
-[0-9]+               { yylval = atoi(yytext); printf("Token: NUMBER\n"); return NUMBER; } // Integers
-[0-9]+"."[0-9]+      { yylval = atof(yytext); return FLOAT_LITERAL; } // Floating-point numbers
-\"[^\"]*\"           { printf("Token: STRING_LITERAL\n"); return STRING_LITERAL; } // String literals
-\'[^\']\'            { return CHAR_LITERAL; } // Char literals
+"abstract"          { return ABSTRACT; }
+"assert"            { return ASSERT; }
+"boolean"           { return BOOLEAN; }
+"break"             { return BREAK; }
+"byte"              { return BYTE; }
+"case"              { return CASE; }
+"catch"             { return CATCH; }
+"char"              { return CHAR; }
+"class"             { return CLASS; }
+"const"             { return CONST; }
+"continue"          { return CONTINUE; }
+"default"           { return DEFAULT; }
+"do"                { return DO; }
+"double"            { return DOUBLE; }
+"else"              { return ELSE; }
+"enum"              { return ENUM; }
+"extends"           { return EXTENDS; }
+"final"             { return FINAL; }
+"finally"           { return FINALLY; }
+"float"             { return FLOAT; }
+"for"               { return FOR; }
+"if"                { return IF; }
+"implements"        { return IMPLEMENTS; }
+"import"            { return IMPORT; }
+"instanceof"        { return INSTANCEOF; }
+"int"               { return INT; }
+"interface"         { return INTERFACE; }
+"long"              { return LONG; }
+"native"            { return NATIVE; }
+"new"               { return NEW; }
+"package"           { return PACKAGE; }
+"private"           { return PRIVATE; }
+"protected"         { return PROTECTED; }
+"public"            { return PUBLIC; }
+"return"            { return RETURN; }
+"short"             { return SHORT; }
+"static"            { return STATIC; }
+"strictfp"          { return STRICTFP; }
+"super"             { return SUPER; }
+"switch"            { return SWITCH; }
+"synchronized"      { return SYNCHRONIZED; }
+"this"              { return THIS; }
+"throw"             { return THROW; }
+"throws"            { return THROWS; }
+"transient"         { return TRANSIENT; }
+"try"               { return TRY; }
+"void"              { return VOID; }
+"volatile"          { return VOLATILE; }
+"while"             { return WHILE; }
 
-[a-zA-Z_][a-zA-Z0-9_]* { printf("Token: IDENTIFIER\n"); return IDENTIFIER; }
+"true"              { return TRUE; }
+"false"             { return FALSE; }
 
-"=="                { return EQ; }
-"!="                { return NEQ; }
-">="                { return GTE; }
-"<="                { return LTE; }
-">"                 { return GT; }
-"<"                 { return LT; }
-"="                 { printf("Token: ASSIGN\n"); return ASSIGN; }
+"null"              { return NULL_LITERAL; }
+
+[a-zA-Z_][a-zA-Z0-9_]*  { yylval.stringVal = strdup(yytext); return IDENTIFIER; }
+[0-9]+                  { yylval.intVal = atoi(yytext); return INTEGER_LITERAL; }
+[0-9]+\.[0-9]*          { yylval.floatVal = atof(yytext); return FLOAT_LITERAL; }
+'([^'\\]|\\.)'          { yylval.charVal = yytext[1]; return CHAR_LITERAL; }
+\"([^"\\]|\\.)*\"       { yylval.stringVal = strdup(yytext); return STRING_LITERAL; }
+
 "+"                 { return PLUS; }
 "-"                 { return MINUS; }
 "*"                 { return MULT; }
 "/"                 { return DIV; }
 "%"                 { return MOD; }
+"++"                { return INCREMENT; }
+"--"                { return DECREMENT; }
+"=="                { return EQ; }
+"!="                { return NEQ; }
+">"                 { return GT; }
+"<"                 { return LT; }
+">="                { return GTE; }
+"<="                { return LTE; }
 "&&"                { return AND; }
 "||"                { return OR; }
 "!"                 { return NOT; }
+"&"                 { return BITWISE_AND; }
+"|"                 { return BITWISE_OR; }
+"^"                 { return BITWISE_XOR; }
+"~"                 { return BITWISE_NOT; }
+"<<"                { return LEFT_SHIFT; }
+">>"                { return RIGHT_SHIFT; }
+">>>"               { return UNSIGNED_RIGHT_SHIFT; }
+"="                 { return ASSIGN; }
+"+="                { return PLUS_ASSIGN; }
+"-="                { return MINUS_ASSIGN; }
+"*="                { return MULT_ASSIGN; }
+"/="                { return DIV_ASSIGN; }
+"%="                { return MOD_ASSIGN; }
+"&="                { return AND_ASSIGN; }
+"|="                { return OR_ASSIGN; }
+"^="                { return XOR_ASSIGN; }
+"<<="               { return LEFT_SHIFT_ASSIGN; }
+">>="               { return RIGHT_SHIFT_ASSIGN; }
+">>>="              { return UNSIGNED_RIGHT_SHIFT_ASSIGN; }
 
 ";"                 { return SEMICOLON; }
 ","                 { return COMMA; }
+"."                 { return DOT; }
+"("                 { return LPAREN; }
+")"                 { return RPAREN; }
 "{"                 { return LBRACE; }
 "}"                 { return RBRACE; }
 "["                 { return LBRACKET; }
 "]"                 { return RBRACKET; }
-"("                 { return LPAREN; }
-")"                 { return RPAREN; }
-"."                 { return DOT; }
+":"                 { return COLON; }
 
-[ \t\n\r]+          { /* Ignore whitespace */ }
 "//".*              { /* Ignore single-line comments */ }
-"/*"([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*+"/" {}
+"/*"([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*+"/"  { /* Ignore multi-line comments */ }
 
-.                   { fprintf(stderr, "Error: Invalid character '%s' at line %d\n", yytext, yylineno); exit(1);}
+.                   { yyerror("Invalid character"); }
 
 %%
-
-int yywrap() {
-    return 1;
-}
