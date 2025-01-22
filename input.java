@@ -1,29 +1,26 @@
-public class QueryExecutor {
-    public void execute() {
-        int firstToken = tokens.get(0);
-        switch (firstToken.getType()) {
-            case SELECT:
-                // tokens.remove(0);
-                executeSelect();
-                break;
-            case INSERT:
-                // tokens.remove(0);
-                executeInsert();
-                break;
-            case DELETE:
-                // tokens.remove(0);
-                executeDelete();
-                break;
-            default:
-                IllegalArgumentException("Unsupported query type: ");
+public class Main {
+    public static int abc;
+    public static void main(String[] args) {
+        if (abc == 0) {
+            int x = 5;
+            System.out.println("Hello World");
         }
-    }
+        else {
+            System.out.println("Goodbye World");
+        }
 
-    private void executeInsert() {
-        
     }
+    public static int add(int a, int b) {
 
-    private void executeDelete() {
-        
+        int c = 0;
+
+        while (c < 10) {
+            int m = 0;
+            a++;
+            c++;
+        }
+
+        int sum = a + b;
+        return a + b;
     }
 }

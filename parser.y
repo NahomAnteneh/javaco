@@ -12,27 +12,30 @@ extern char *yytext;
 
 int yylex(void);
 
-#define MAX_ERRORS 100
-
-typedef struct {
+typedef struct Error {
     int line;
-    char message[256];
+    char *message;
+    struct Error *next;
 } Error;
 
-Error error_list[MAX_ERRORS];
-int error_count = 0;
+Error *error_list = NULL;
 
 void add_error(int line, const char *msg) {
-    if (error_count < MAX_ERRORS) {
-        error_list[error_count].line = line;
-        snprintf(error_list[error_count].message, sizeof(error_list[error_count].message), "%s", msg);
-        error_count++;
-    }
+    Error *new_error = (Error *)malloc(sizeof(Error));
+    new_error->line = line;
+    new_error->message = strdup(msg);
+    new_error->next = error_list;
+    error_list = new_error;
 }
 
 void print_errors() {
-    for (int i = 0; i < error_count; i++) {
-        fprintf(stderr, "Error at line %d: %s\n", error_list[i].line, error_list[i].message);
+    Error *current = error_list;
+    while (current) {
+        fprintf(stderr, "Error at line %d: %s\n", current->line, current->message);
+        Error *temp = current;
+        current = current->next;
+        free(temp->message);
+        free(temp);
     }
 }
 
@@ -120,9 +123,6 @@ void check_array_exists(char *array_name, char *object_name) {
 
 %type <stringVal> type
 %type <stringVal> method_invocation array_access object_chain
-
-%nonassoc THEN
-%nonassoc ELSE
 
 %left OR
 %left AND
@@ -234,7 +234,12 @@ type:
 method_declaration:
     access_modifier static_modifier type IDENTIFIER
     {
-        enter_scope($4);
+        if (symbol_exists($4)) {
+            yyerror("Redeclaration of method");
+        } else {
+            insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_METHOD, current_symbol_table);
+            enter_scope($4);
+        }
     }
     LPAREN parameter_list RPAREN LBRACE block_statements RBRACE
     {
@@ -283,8 +288,9 @@ statement:
     | continue_statement
     | try_statement
     | method_call_statement
-    | increment_statement
     | block
+    | increment_statement
+    | decrement_statement
     ;
 
 increment_statement:
@@ -295,7 +301,10 @@ increment_statement:
         }
         free($1);
     }
-    | IDENTIFIER DECREMENT SEMICOLON
+    ;
+
+decrement_statement:
+    IDENTIFIER DECREMENT SEMICOLON
     {
         if (!symbol_exists($1)) {
             yyerror("Undeclared variable");
@@ -349,11 +358,7 @@ argument_list:
     ;
 
 if_statement:
-    IF LPAREN expression RPAREN statement
-    | IF LPAREN expression RPAREN LBRACE block_statements RBRACE
-    | IF LPAREN expression RPAREN statement ELSE statement
-    | IF LPAREN expression RPAREN LBRACE block_statements RBRACE ELSE statement
-    | IF LPAREN expression RPAREN statement ELSE LBRACE block_statements RBRACE
+    IF { enter_scope("if"); } LPAREN expression RPAREN LBRACE block_statements RBRACE {exit_scope();} %prec THEN
     | IF LPAREN expression RPAREN LBRACE block_statements RBRACE ELSE LBRACE block_statements RBRACE
     ;
 
