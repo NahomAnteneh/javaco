@@ -23,11 +23,10 @@ Error *error_list = NULL;
 void add_error(int line, const char *msg) {
     Error *new_error = (Error *)malloc(sizeof(Error));
     new_error->line = line;
-    new_error->message = strdup(msg);
+    new_error->message = strdup(msg);  // Ensure msg is formatted before passing
     new_error->next = error_list;
     error_list = new_error;
 }
-
 void print_errors() {
     Error *current = error_list;
     while (current) {
@@ -68,6 +67,16 @@ bool symbol_exists(char *name) {
             entry = entry->next;
         }
         current = current->parent;
+    }
+    return false;
+}
+
+bool symbol_exists_in_current_scope(char *name) {
+    SymbolTable *current = current_symbol_table;
+    SymbolEntry *entry = current->entries;
+    while (entry) {
+        if (strcmp(entry->name, name) == 0) return true;
+        entry = entry->next;
     }
     return false;
 }
@@ -171,7 +180,7 @@ program:
 constructor_declaration:
     access_modifier IDENTIFIER LPAREN parameter_list RPAREN 
     {
-        check_constructor_name($2, yylineno);  // Capture current line
+        check_constructor_name($2, yylineno);
         insert_symbol(current_symbol_table, $2, "constructor", 
                      SYMBOL_CATEGORY_METHOD, current_symbol_table);
         enter_scope($2);
@@ -214,8 +223,10 @@ access_modifier:
 variable_declaration:
     access_modifier static_modifier type IDENTIFIER SEMICOLON
     {
-        if (symbol_exists($4)) {
-            yyerror("Variable redeclared");
+        if (symbol_exists_in_current_scope($4)) {
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Variable redeclared: '%s'", $4);
+            add_error(yylineno, error_msg);
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -223,8 +234,10 @@ variable_declaration:
     }
     | access_modifier static_modifier type IDENTIFIER ASSIGN expression SEMICOLON
     {
-        if (symbol_exists($4)) {
-            yyerror("Variable redeclared");
+        if (symbol_exists_in_current_scope($4)) {
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Variable redeclared: '%s'", $4);
+            add_error(yylineno, error_msg);
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -232,8 +245,10 @@ variable_declaration:
     }
     | type IDENTIFIER SEMICOLON
     {
-        if (symbol_exists($2)) {
-            yyerror("Variable redeclared");
+        if (symbol_exists_in_current_scope($2)) {
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Variable redeclared: '%s'", $2);
+            add_error(yylineno, error_msg);
         } else {
             insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -241,8 +256,10 @@ variable_declaration:
     }
     | type IDENTIFIER ASSIGN expression SEMICOLON
     {
-        if (symbol_exists($2)) {
-            yyerror("Variable redeclared");
+        if (symbol_exists_in_current_scope($2)) {
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Variable redeclared: '%s'", $2);
+            add_error(yylineno, error_msg);
         } else {
             insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -273,8 +290,10 @@ type:
 method_declaration:
     access_modifier static_modifier type IDENTIFIER
     {
-        if (symbol_exists($4)) {
-            yyerror("Redeclaration of method");
+        if (symbol_exists_in_current_scope($4)) {
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Method redeclared: '%s'", $4);
+            add_error(yylineno, error_msg);
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_METHOD, current_symbol_table);
             enter_scope($4);
@@ -295,8 +314,10 @@ parameter_list:
 parameter:
     type IDENTIFIER
     {
-        if (symbol_exists($2)) {
-            yyerror("Parameter redeclared");
+        if (symbol_exists_in_current_scope($2)) {
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Parameter redeclared: '%s'", $2);
+            add_error(yylineno, error_msg);
         } else {
             insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_PARAMETER, current_symbol_table);
         }
@@ -427,7 +448,7 @@ argument_list:
 if_statement:
     IF LPAREN expression RPAREN 
     { enter_scope("if"); } 
-    LBRACE block_statements RBRACE  // Explicit braces without block scope
+    LBRACE block_statements RBRACE
     { exit_scope(); } 
     else_clause
     ;
@@ -436,14 +457,14 @@ else_clause:
     /* empty */
     | ELSE 
     { enter_scope("else"); } 
-    LBRACE block_statements RBRACE  // Explicit braces
+    LBRACE block_statements RBRACE
     { exit_scope(); }
     ;
 
 while_statement:
     WHILE LPAREN expression RPAREN 
     { enter_scope("while"); } 
-    LBRACE block_statements RBRACE  // Explicit braces without block scope
+    LBRACE block_statements RBRACE
     { exit_scope(); }
     ;
 
@@ -463,8 +484,10 @@ for_init:
 local_variable_declaration:
     type IDENTIFIER ASSIGN expression
     {
-        if (symbol_exists($2)) {
-            yyerror("Variable redeclared");
+        if (symbol_exists_in_current_scope($2)) {
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Variable redeclared: '%s'", $2);
+            add_error(yylineno, error_msg);
         } else {
             insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -472,14 +495,17 @@ local_variable_declaration:
     }
     | type IDENTIFIER
     {
-        if (symbol_exists($2)) {
-            yyerror("Variable redeclared");
+        if (symbol_exists_in_current_scope($2)) {
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Variable redeclared: '%s'", $2);
+            add_error(yylineno, error_msg);
         } else {
             insert_symbol(current_symbol_table, $2, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
         free($2); free($1);
     }
     ;
+
 
 assignment_expression:
     IDENTIFIER ASSIGN expression
@@ -517,8 +543,10 @@ continue_statement:
 array_declaration:
     type LBRACKET RBRACKET IDENTIFIER SEMICOLON
     {
-        if (symbol_exists($4)) {
-            yyerror("Array redeclared");
+        if (symbol_exists_in_current_scope($4)) {
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Array redeclared: '%s'", $4);
+            add_error(yylineno, error_msg);
         } else {
             insert_symbol(current_symbol_table, $4, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
@@ -526,7 +554,7 @@ array_declaration:
     }
     | type LBRACKET RBRACKET IDENTIFIER ASSIGN array_initializer SEMICOLON
     {
-        if (symbol_exists($4)) {
+        if (symbol_exists_in_current_scope($4)) {
             yyerror("Array redeclared");
         } else {
             insert_symbol(current_symbol_table, $4, $1, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
@@ -548,7 +576,7 @@ enhanced_for_statement:
     FOR LPAREN type IDENTIFIER COLON expression RPAREN
     {
         enter_scope("enhanced_for");
-        if (symbol_exists($4)) {
+        if (symbol_exists_in_current_scope($4)) {
             yyerror("Variable redeclared");
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
@@ -592,7 +620,7 @@ catch_clause:
     { enter_scope("catch"); }
     block
     {
-        if (symbol_exists($4)) {
+        if (symbol_exists_in_current_scope($4)) {
             yyerror("Exception variable redeclared");
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
