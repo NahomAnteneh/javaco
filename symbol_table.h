@@ -14,7 +14,7 @@ typedef struct SymbolEntry
     char *name;
     char *type;
     SymbolCategory category;
-    struct symbol_table *scope;
+    struct SymbolTable *scope;
     struct SymbolEntry *next;
 } SymbolEntry;
 

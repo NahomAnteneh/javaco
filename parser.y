@@ -45,13 +45,29 @@ void yyerror(const char *msg) {
     add_error(yylineno, error_message);
 }
 
+void var_error(const char *type, const char *name) {
+    char error_msg[256];
+    snprintf(error_msg, sizeof(error_msg), "Undeclared %s '%s'", type, name);
+    add_error(yylineno, error_msg);
+}
+
+void chain_error(const char *part) {
+    char error_msg[256];
+    snprintf(error_msg, sizeof(error_msg), "Undeclared object '%s' in chain", part);
+    add_error(yylineno, error_msg);
+}
+
 SymbolTable *current_symbol_table = NULL;
 
 bool symbol_exists(char *name) {
-    SymbolEntry *entry = current_symbol_table->entries;
-    while (entry) {
-        if (strcmp(entry->name, name) == 0) return true;
-        entry = entry->next;
+    SymbolTable *current = current_symbol_table;
+    while (current) {
+        SymbolEntry *entry = current->entries;
+        while (entry) {
+            if (strcmp(entry->name, name) == 0) return true;
+            entry = entry->next;
+        }
+        current = current->parent;
     }
     return false;
 }
@@ -92,6 +108,13 @@ void check_array_exists(char *array_name, char *object_name) {
     }
 }
 
+void check_constructor_name(const char *name, int line) {
+    if (current_symbol_table && strcmp(name, current_symbol_table->name) != 0) {
+        fprintf(stderr, "Error at line %d: Constructor name '%s' must match class name '%s'\n",
+                line, name, current_symbol_table->name);
+    }
+}
+
 %}
 
 %code requires {
@@ -122,7 +145,7 @@ void check_array_exists(char *array_name, char *object_name) {
 %token SEMICOLON COMMA DOT LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET COLON
 
 %type <stringVal> type
-%type <stringVal> method_invocation array_access object_chain
+%type <stringVal> method_invocation array_access object_chain constructor_declaration
 
 %left OR
 %left AND
@@ -142,6 +165,22 @@ void check_array_exists(char *array_name, char *object_name) {
 program:
     program class_declaration
     | class_declaration
+    | constructor_declaration
+    ;
+
+constructor_declaration:
+    access_modifier IDENTIFIER LPAREN parameter_list RPAREN 
+    {
+        check_constructor_name($2, yylineno);  // Capture current line
+        insert_symbol(current_symbol_table, $2, "constructor", 
+                     SYMBOL_CATEGORY_METHOD, current_symbol_table);
+        enter_scope($2);
+        free($2);
+    }
+    LBRACE block_statements RBRACE 
+    {
+        exit_scope();
+    }
     ;
 
 class_declaration:
@@ -339,15 +378,43 @@ method_invocation:
     }
     | object_chain DOT IDENTIFIER LPAREN argument_list RPAREN
     {
-        check_method_exists($3, $1);
-        free($1); free($3);
-        $$ = NULL;
+        char *chain_copy = strdup($1);
+        char *current_part = strtok(chain_copy, ".");
+        SymbolTable *current_scope = current_symbol_table;
+        SymbolEntry *entry = NULL;
+
+        while (current_part != NULL) {
+            entry = lookup_symbol(current_scope, current_part);
+            if (!entry || entry->category != SYMBOL_CATEGORY_VARIABLE) {
+                chain_error(current_part);
+                break;
+            }
+            current_scope = entry->scope;
+            current_part = strtok(NULL, ".");
+        }
+
+        if (entry) {
+            SymbolEntry *method = lookup_symbol(current_scope, $3);
+            if (!method || method->category != SYMBOL_CATEGORY_METHOD) {
+                var_error("method", $3);
+            }
+        }
+
+        free(chain_copy);
+        free($1);
+        free($3);
     }
     ;
     
 object_chain:
-    IDENTIFIER
+    IDENTIFIER { $$ = strdup($1); free($1); }
     | object_chain DOT IDENTIFIER
+    {
+        $$ = malloc(strlen($1) + strlen($3) + 2);
+        sprintf($$, "%s.%s", $1, $3);
+        free($1);
+        free($3);
+    }
     ;
 
 argument_list:
@@ -358,30 +425,33 @@ argument_list:
     ;
 
 if_statement:
-    IF { enter_scope("if"); } LPAREN expression RPAREN LBRACE block_statements RBRACE {exit_scope();} %prec THEN
-    | IF LPAREN expression RPAREN LBRACE block_statements RBRACE ELSE LBRACE block_statements RBRACE
+    IF LPAREN expression RPAREN 
+    { enter_scope("if"); } 
+    LBRACE block_statements RBRACE  // Explicit braces without block scope
+    { exit_scope(); } 
+    else_clause
+    ;
+
+else_clause:
+    /* empty */
+    | ELSE 
+    { enter_scope("else"); } 
+    LBRACE block_statements RBRACE  // Explicit braces
+    { exit_scope(); }
     ;
 
 while_statement:
-    WHILE LPAREN expression RPAREN statement
-    {
-        enter_scope("while");
-    }
-    statement
-    {
-        exit_scope();
-    }
+    WHILE LPAREN expression RPAREN 
+    { enter_scope("while"); } 
+    LBRACE block_statements RBRACE  // Explicit braces without block scope
+    { exit_scope(); }
     ;
 
 for_statement:
     FOR LPAREN for_init SEMICOLON expression_opt SEMICOLON for_update_opt RPAREN
-    {
-        enter_scope("for");
-    }
+    { enter_scope("for"); }
     statement
-    {
-        exit_scope();
-    }
+    { exit_scope(); }
     ;
 
 for_init:
@@ -478,28 +548,22 @@ enhanced_for_statement:
     FOR LPAREN type IDENTIFIER COLON expression RPAREN
     {
         enter_scope("enhanced_for");
-    }
-    statement
-    {
         if (symbol_exists($4)) {
             yyerror("Variable redeclared");
         } else {
             insert_symbol(current_symbol_table, $4, $3, SYMBOL_CATEGORY_VARIABLE, current_symbol_table);
         }
         free($4); free($3);
-        exit_scope();
     }
+    statement
+    { exit_scope(); }
     ;
 
 switch_statement:
     SWITCH LPAREN expression RPAREN LBRACE
-    {
-        enter_scope("switch");
-    }
+    { enter_scope("switch"); }
     switch_block RBRACE
-    {
-        exit_scope();
-    }
+    { exit_scope(); }
     ;
 
 switch_block:
@@ -525,9 +589,7 @@ catch_clauses:
 
 catch_clause:
     CATCH LPAREN type IDENTIFIER RPAREN
-    {
-        enter_scope("catch");
-    }
+    { enter_scope("catch"); }
     block
     {
         if (symbol_exists($4)) {
@@ -564,9 +626,6 @@ array_access:
 
 object_creation:
     NEW IDENTIFIER LPAREN argument_list RPAREN
-    {
-        // Handle object creation
-    }
     ;
 
 primary:

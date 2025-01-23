@@ -2,7 +2,6 @@
 #include "y.tab.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 int yycolumn = 1;
 
@@ -42,7 +41,7 @@ int yycolumn = 1;
 "implements"        { return IMPLEMENTS; }
 "import"            { return IMPORT; }
 "instanceof"        { return INSTANCEOF; }
-"int"               { printf("INT\n"); return INT; }
+"int"               { return INT; }
 "interface"         { return INTERFACE; }
 "long"              { return LONG; }
 "native"            { return NATIVE; }
@@ -102,7 +101,7 @@ int yycolumn = 1;
 "<<"                { return LEFT_SHIFT; }
 ">>"                { return RIGHT_SHIFT; }
 ">>>"               { return UNSIGNED_RIGHT_SHIFT; }
-"="                 { printf("ASSIGN\n"); return ASSIGN; }
+"="                 { return ASSIGN; }
 "+="                { return PLUS_ASSIGN; }
 "-="                { return MINUS_ASSIGN; }
 "*="                { return MULT_ASSIGN; }
