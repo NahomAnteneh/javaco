@@ -135,6 +135,7 @@ void check_constructor_name(const char *name, int line) {
     float floatVal;
     char* stringVal;
     char charVal;
+    char* typeVal; // Added for type checking
 }
 
 %token <stringVal> IDENTIFIER STRING_LITERAL
@@ -153,8 +154,9 @@ void check_constructor_name(const char *name, int line) {
 %token LEFT_SHIFT_ASSIGN RIGHT_SHIFT_ASSIGN UNSIGNED_RIGHT_SHIFT_ASSIGN
 %token SEMICOLON COMMA DOT LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET COLON
 
-%type <stringVal> type
-%type <stringVal> method_invocation array_access object_chain constructor_declaration
+%type <typeVal> method_invocation array_access object_chain object_creation
+%type <stringVal> type constructor_declaration
+%type <typeVal> expression unary_expression binary_expression primary
 
 %left OR
 %left AND
@@ -354,7 +356,11 @@ statement:
     ;
 
 increment_statement:
-    IDENTIFIER INCREMENT SEMICOLON
+    increment_expression SEMICOLON
+    ;
+
+increment_expression:
+    IDENTIFIER INCREMENT
     {
         if (!symbol_exists($1)) {
             yyerror("Undeclared variable");
@@ -364,7 +370,11 @@ increment_statement:
     ;
 
 decrement_statement:
-    IDENTIFIER DECREMENT SEMICOLON
+    decrement_expression SEMICOLON
+    ;
+
+decrement_expression:
+    IDENTIFIER DECREMENT
     {
         if (!symbol_exists($1)) {
             yyerror("Undeclared variable");
@@ -378,6 +388,16 @@ assignment_statement:
     {
         if (!symbol_exists($1)) {
             yyerror("Undeclared variable");
+        } else {
+            SymbolEntry *var_entry = lookup_symbol(current_symbol_table, $1);
+            if (var_entry) {
+                if (strcmp(var_entry->type, $3) != 0) {
+                    char error_msg[256];
+                    snprintf(error_msg, sizeof(error_msg), "Type mismatch: cannot assign %s to %s", $3, var_entry->type);
+                    add_error(yylineno, error_msg);
+                }
+                free($3);
+            }
         }
         free($1);
     }
@@ -394,8 +414,8 @@ method_invocation:
         if (!method || method->category != SYMBOL_CATEGORY_METHOD) {
             yyerror("Undefined method");
         }
+        $$ = method ? strdup(method->type) : strdup("unknown");
         free($1);
-        $$ = NULL;
     }
     | object_chain DOT IDENTIFIER LPAREN argument_list RPAREN
     {
@@ -403,10 +423,11 @@ method_invocation:
         char *current_part = strtok(chain_copy, ".");
         SymbolTable *current_scope = current_symbol_table;
         SymbolEntry *entry = NULL;
+        char *final_type = "unknown";
 
-        while (current_part != NULL) {
+        while (current_part) {
             entry = lookup_symbol(current_scope, current_part);
-            if (!entry || entry->category != SYMBOL_CATEGORY_VARIABLE) {
+            if (!entry) {
                 chain_error(current_part);
                 break;
             }
@@ -416,19 +437,26 @@ method_invocation:
 
         if (entry) {
             SymbolEntry *method = lookup_symbol(current_scope, $3);
-            if (!method || method->category != SYMBOL_CATEGORY_METHOD) {
+            if (method && method->category == SYMBOL_CATEGORY_METHOD) {
+                final_type = method->type;
+            } else {
                 var_error("method", $3);
             }
         }
 
+        $$ = strdup(final_type);
         free(chain_copy);
         free($1);
         free($3);
     }
     ;
+
     
 object_chain:
-    IDENTIFIER { $$ = strdup($1); free($1); }
+    IDENTIFIER { 
+        $$ = strdup($1); 
+        free($1); 
+    }
     | object_chain DOT IDENTIFIER
     {
         $$ = malloc(strlen($1) + strlen($3) + 2);
@@ -638,20 +666,27 @@ array_access:
     IDENTIFIER LBRACKET expression RBRACKET
     {
         SymbolEntry *entry = lookup_symbol(current_symbol_table, $1);
-        if (!entry) {
-            yyerror("Undeclared variable");
-        } else if (entry->category != SYMBOL_CATEGORY_VARIABLE) {
-            yyerror("Not an array variable");
+        if (entry && entry->type) {
+            // Extract base type from array type (e.g., "int[]" -> "int")
+            char *base_type = strdup(entry->type);
+            char *bracket = strstr(base_type, "[]");
+            if (bracket) *bracket = '\0';
+            $$ = base_type;
+        } else {
+            $$ = strdup("unknown");
         }
         free($1);
     }
     | object_chain DOT IDENTIFIER LBRACKET expression RBRACKET
     {
         check_array_exists($3, $1);
-        free($1); free($3);
+        // Assume array type resolution similar to above
+        $$ = strdup("int");  // Replace with actual type resolution logic
+        free($1);
+        free($3);
     }
     ;
-
+    
 object_creation:
     NEW IDENTIFIER LPAREN argument_list RPAREN
     ;
@@ -662,50 +697,169 @@ primary:
         SymbolEntry *entry = lookup_symbol(current_symbol_table, $1);
         if (!entry) {
             yyerror("Undeclared variable");
+            $$ = strdup("unknown");
         } else if (entry->category == SYMBOL_CATEGORY_METHOD) {
             yyerror("Method called without parentheses");
+            $$ = strdup("unknown");
+        } else {
+            $$ = strdup(entry->type);
         }
         free($1);
     }
-    | INTEGER_LITERAL
-    | FLOAT_LITERAL
-    | STRING_LITERAL
-    | CHAR_LITERAL
-    | TRUE
-    | FALSE
-    | NULL_LITERAL
-    | LPAREN expression RPAREN
+    | INTEGER_LITERAL { $$ = strdup("int"); }
+    | FLOAT_LITERAL { $$ = strdup("float"); }
+    | STRING_LITERAL { $$ = strdup("String"); }
+    | CHAR_LITERAL { $$ = strdup("char"); }
+    | TRUE { $$ = strdup("boolean"); }
+    | FALSE { $$ = strdup("boolean"); }
+    | NULL_LITERAL { $$ = strdup("null"); }
+    | LPAREN expression RPAREN { $$ = $2; }
     ;
 
 unary_expression:
-    primary
-    | MINUS primary
-    | NOT primary
-    | BITWISE_NOT primary
-    | INCREMENT primary
-    | DECREMENT primary
+    primary { $$ = $1; }
+    | MINUS primary {
+        if (strcmp($2, "int") == 0 || strcmp($2, "float") == 0) {
+            $$ = $2;
+        } else {
+            add_error(yylineno, "Unary '-' requires numeric type");
+            $$ = strdup("unknown");
+        }
+        free($2);
+    }
+    | NOT primary {
+        if (strcmp($2, "boolean") == 0) {
+            $$ = strdup("boolean");
+        } else {
+            add_error(yylineno, "Logical '!' requires boolean type");
+            $$ = strdup("unknown");
+        }
+        free($2);
+    }
+    | BITWISE_NOT primary {
+        if (strcmp($2, "int") == 0 || strcmp($2, "char") == 0) {
+            $$ = $2;
+        } else {
+            add_error(yylineno, "Bitwise '~' requires integer type");
+            $$ = strdup("unknown");
+        }
+        free($2);
+    }
+    | INCREMENT primary {
+        if (!symbol_exists($2)) {
+            yyerror("Undeclared variable in increment");
+        }
+        if (strcmp($2, "int") == 0 || strcmp($2, "float") == 0) {
+            $$ = $2;
+        } else {
+            add_error(yylineno, "Increment requires numeric type");
+            $$ = strdup("unknown");
+        }
+        free($2);
+    }
+    | DECREMENT primary {
+        if (!symbol_exists($2)) {
+            yyerror("Undeclared variable in decrement");
+        }
+        if (strcmp($2, "int") == 0 || strcmp($2, "float") == 0) {
+            $$ = $2;
+        } else {
+            add_error(yylineno, "Decrement requires numeric type");
+            $$ = strdup("unknown");
+        }
+        free($2);
+    }
     ;
 
 binary_expression:
-    expression PLUS expression
+    expression PLUS expression {
+        if (!strcmp($1, "String") || !strcmp($3, "String")) {
+            $$ = strdup("String");
+        }
+        else if ((!strcmp($1, "int") || !strcmp($1, "float")) && 
+                (!strcmp($3, "int") || !strcmp($3, "float"))) {
+            $$ = (strcmp($1, "float") == 0 || strcmp($3, "float") == 0) 
+                ? strdup("float") : strdup("int");
+        }
+        else {
+            add_error(yylineno, "Invalid types for addition");
+            $$ = strdup("unknown");
+        }
+        free($1); free($3);
+    }
     | expression MINUS expression
     | expression MULT expression
     | expression DIV expression
-    | expression MOD expression
+    | expression MOD expression {
+        // Common handling for arithmetic operations
+        char* type = NULL;
+        if ((!strcmp($1, "int") || !strcmp($1, "float")) && 
+            (!strcmp($3, "int") || !strcmp($3, "float"))) {
+            type = (strcmp($1, "float") == 0 || strcmp($3, "float") == 0) 
+                ? "float" : "int";
+        } else {
+            add_error(yylineno, "Invalid types for arithmetic operation");
+            type = "unknown";
+        }
+        $$ = strdup(type);
+        free($1); free($3);
+    }
     | expression GT expression
     | expression LT expression
     | expression GTE expression
-    | expression LTE expression
+    | expression LTE expression {
+        if ((!strcmp($1, "int") || !strcmp($1, "float")) && 
+            (!strcmp($3, "int") || !strcmp($3, "float"))) {
+            $$ = strdup("boolean");
+        } else {
+            add_error(yylineno, "Comparison requires numeric types");
+            $$ = strdup("unknown");
+        }
+        free($1); free($3);
+    }
     | expression EQ expression
-    | expression NEQ expression
+    | expression NEQ expression {
+        if (strcmp($1, $3) == 0 || 
+            (!strcmp($1, "null") || !strcmp($3, "null"))) {
+            $$ = strdup("boolean");
+        } else {
+            add_error(yylineno, "Type mismatch in equality check");
+            $$ = strdup("unknown");
+        }
+        free($1); free($3);
+    }
     | expression AND expression
-    | expression OR expression
+    | expression OR expression {
+        if (strcmp($1, "boolean") == 0 && strcmp($3, "boolean") == 0) {
+            $$ = strdup("boolean");
+        } else {
+            add_error(yylineno, "Logical operators require boolean operands");
+            $$ = strdup("unknown");
+        }
+        free($1); free($3);
+    }
     | expression BITWISE_AND expression
     | expression BITWISE_OR expression
-    | expression BITWISE_XOR expression
+    | expression BITWISE_XOR expression {
+        if (strcmp($1, "int") == 0 && strcmp($3, "int") == 0) {
+            $$ = strdup("int");
+        } else {
+            add_error(yylineno, "Bitwise operators require integer operands");
+            $$ = strdup("unknown");
+        }
+        free($1); free($3);
+    }
     | expression LEFT_SHIFT expression
     | expression RIGHT_SHIFT expression
-    | expression UNSIGNED_RIGHT_SHIFT expression
+    | expression UNSIGNED_RIGHT_SHIFT expression {
+        if (strcmp($1, "int") == 0 && strcmp($3, "int") == 0) {
+            $$ = strdup("int");
+        } else {
+            add_error(yylineno, "Shift operators require integer operands");
+            $$ = strdup("unknown");
+        }
+        free($1); free($3);
+    }
     ;
 
 expression:
@@ -714,6 +868,8 @@ expression:
     | array_access
     | method_invocation
     | object_creation
+    | increment_expression
+    | decrement_expression
     ;
 
 %%
